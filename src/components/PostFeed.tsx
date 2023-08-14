@@ -1,33 +1,33 @@
 'use client';
 
-import { INFINITE_SCROLLING_PAGINATION_RESULTS } from '@/config';
+import { INFINITE_SCROLL_PAGINATION_RESULTS } from '@/config';
 import { ExtendedPost } from '@/types/db';
 import { useIntersection } from '@mantine/hooks';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import axios from 'axios';
-import { useSession } from 'next-auth/react';
-import { useRef } from 'react';
+import { Loader2 } from 'lucide-react';
+import { FC, useEffect, useRef } from 'react';
 import Post from './Post';
+import { useSession } from 'next-auth/react';
+
 interface PostFeedProps {
   initialPosts: ExtendedPost[];
-  subredditName: string | null;
+  subredditName?: string | null;
 }
 
-const PostFeed: React.FC<PostFeedProps> = ({ initialPosts, subredditName }) => {
+const PostFeed: FC<PostFeedProps> = ({ initialPosts, subredditName }) => {
   const lastPostRef = useRef<HTMLElement>(null);
-
   const { ref, entry } = useIntersection({
     root: lastPostRef.current,
     threshold: 1,
   });
-
   const { data: session } = useSession();
 
   const { data, fetchNextPage, isFetchingNextPage } = useInfiniteQuery(
     ['infinite-query'],
     async ({ pageParam = 1 }) => {
       const query =
-        `/api/posts?limit=${INFINITE_SCROLLING_PAGINATION_RESULTS}&page=${pageParam}` +
+        `/api/posts?limit=${INFINITE_SCROLL_PAGINATION_RESULTS}&page=${pageParam}` +
         (!!subredditName ? `&subredditName=${subredditName}` : '');
 
       const { data } = await axios.get(query);
@@ -42,11 +42,16 @@ const PostFeed: React.FC<PostFeedProps> = ({ initialPosts, subredditName }) => {
     }
   );
 
+  useEffect(() => {
+    if (entry?.isIntersecting) {
+      fetchNextPage(); // Load more posts when the last post comes into view
+    }
+  }, [entry, fetchNextPage]);
+
   const posts = data?.pages.flatMap((page) => page) ?? initialPosts;
 
   return (
     <ul className='flex flex-col col-span-2 space-y-6'>
-      {' '}
       {posts.map((post, index) => {
         const votesAmt = post.votes.reduce((acc, vote) => {
           if (vote.type === 'UP') return acc + 1;
@@ -59,26 +64,37 @@ const PostFeed: React.FC<PostFeedProps> = ({ initialPosts, subredditName }) => {
         );
 
         if (index === posts.length - 1) {
+          // Add a ref to the last post in the list
           return (
             <li key={post.id} ref={ref}>
               <Post
                 post={post}
-                subredditName={post.subreddit.name}
                 commentAmt={post.comments.length}
+                subredditName={post.subreddit.name}
+                votesAmt={votesAmt}
+                currentVote={currentVote}
               />
             </li>
           );
         } else {
           return (
             <Post
-              post={post}
-              subredditName={post.subreddit.name}
               key={post.id}
+              post={post}
               commentAmt={post.comments.length}
+              subredditName={post.subreddit.name}
+              votesAmt={votesAmt}
+              currentVote={currentVote}
             />
           );
         }
       })}
+
+      {isFetchingNextPage && (
+        <li className='flex justify-center'>
+          <Loader2 className='w-6 h-6 text-zinc-500 animate-spin' />
+        </li>
+      )}
     </ul>
   );
 };
